@@ -1,14 +1,18 @@
-using API.DTOs;
-using API.Filters;
-using API.Interfaces.Services;
+using System.Security.Claims;
+using BLL.Interfaces.Services;
+using Domain.Enums;
+using Domain.Models;
+using Domain.WebExceptions;
+using MapsterMapper;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[ServiceFilter(typeof(RequireUserIdFilter))]
-public class UsersController(IUserService userService) : ControllerBase
+[Authorize]
+public class UsersController(IUserService userService, IMapper mapper) : ControllerBase
 {
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetUser(Guid id)
@@ -52,14 +56,37 @@ public class UsersController(IUserService userService) : ControllerBase
     }
     
     [HttpPut]
-    public async Task<IActionResult> UpdateUser(UserDto user)
+    public async Task<IActionResult> UpdateUser(UserDto dto)
     {
-        var userId = HttpContext.Items["UserId"] as Guid?;
-        if (userId != user.Id)
+        try
         {
-            return Forbid();
-        }
+            Guid? userId = Guid.TryParse(HttpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var id)
+                ? id
+                : null;
+            
+            Role? userRole = Enum.TryParse<Role>(HttpContext.User.FindFirst(ClaimTypes.Role)?.Value, out var role)
+                ? role
+                : null;
+            
+            if (userId is null)
+            {
+                return Unauthorized();
+            }
+            
+            if (userId != dto.Id && role != Role.Admin)
+            {
+                return Forbid();
+            }
 
-        return Ok(await userService.UpdateUserAsync(user));
+            var user = mapper.Map<User>(dto);
+
+            await userService.UpdateUserAsync(user);
+
+            return Ok();
+        }
+        catch (NotFoundException)
+        {
+            return NotFound($"User with id {dto.Id} not found");
+        }
     }
 }

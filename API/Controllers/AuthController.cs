@@ -1,55 +1,63 @@
-using API.DTOs;
-using API.Interfaces.Services;
+using API.Filters;
+using BLL.Interfaces.Auth;
+using Domain.Requests;
+using Domain.WebExceptions;
 using Microsoft.AspNetCore.Mvc;
 
 namespace API.Controllers;
 
 [ApiController]
+[Tags("Auth")]
 [Route("api/[controller]")]
-public class AuthController(IAuthService authService) : ControllerBase
+public class AuthController(IAuthService authService, ILogger<AuthController> logger) : ControllerBase
 {
-    public async Task<IActionResult> Login(LoginRequest request)
+    [HttpPost("login")]
+    public async Task<IActionResult> Login(LoginRequest dto)
     {
-        if (string.IsNullOrWhiteSpace(request.Login))
-            return BadRequest("Поле login обязательно");
-
-        if (string.IsNullOrWhiteSpace(request.Password))
-            return BadRequest("Поле password обязательно");
-
+        try
+        {
+            var result = await authService.LoginAsync(dto.Login, dto.Password);
             
-        var result = await authService.Login(request.Login, request.Password);
-        return result
-            ? Ok(new { expires_in = 3600 })
-            : Unauthorized("Неверный логин или пароль");
+            return Ok(new {accessToken = result});
+        }
+        catch (UnauthorizedException)
+        {
+            return Unauthorized();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError("Error during login: {exWithStack}", ex);
+            
+            return Problem("Something went wrong");
+        }
     }
 
-    public async Task<IActionResult> Logout()
+    [HttpPost("register")]
+    [ServiceFilter(typeof(ValidationFilter<RegisterRequest>))]
+    public async Task<IActionResult> Register(RegisterRequest dto)
     {
-        await authService.Logout();
+        try
+        {
+            if (string.IsNullOrWhiteSpace(dto.Login))
+                return BadRequest("Поле login обязательно");
 
-        return Ok();
-    }
+            if (string.IsNullOrWhiteSpace(dto.Password))
+                return BadRequest("Поле password обязательно");
 
-    public async Task<IActionResult> Register(RegisterRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.Login))
-            return BadRequest("Поле login обязательно");
+            if (dto.Age <= 0)
+                return BadRequest("Поле age должно быть больше 0");
 
-        if (string.IsNullOrWhiteSpace(request.Password))
-            return BadRequest("Поле password обязательно");
-
-        if (request.Age <= 0)
-            return BadRequest("Поле age должно быть больше 0");
-            
-        var newUser = new UserDto(
-            Id: Guid.NewGuid(),
-            Login: request.Login,
-            Password: request.Password,
-            Age: request.Age);
-            
-        var result = await authService.Register(newUser);
-        return result
-            ? Created($"/users/{newUser.Id}", new { newUser.Id, request.Login, request.Age })
-            : Conflict("Пользователь с таким логином уже существует");
+            var newUserId = await authService.RegisterAsync(username: dto.Login, password: dto.Password, age: dto.Age);
+            return Created($"/users/{newUserId}", new { newUserId, dto.Login, dto.Age });
+        }
+        catch (ConflictException ex)
+        {
+            return Conflict(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError("Error during register: {exWithStack}", ex);
+            return Problem("Something went wrong");
+        }
     }
 }

@@ -1,28 +1,54 @@
 using API;
-using API.Filters;
-using API.Interfaces.Repositories;
-using API.Interfaces.Services;
-using API.Middlewares;
-using API.Repositories;
-using API.Services;
+using BLL.Implementation;
+using Dal;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
+var services = builder.Services;
+var config = builder.Configuration;
 
-builder.Services.AddSingleton<DbContextMock>();
-builder.Services.AddScoped<IUserRepository, UserRepository>();
-builder.Services.AddScoped<IUserService, UserService>();
-builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<ISessionService, SessionService>();
-builder.Services.AddScoped<RequireUserIdFilter>();
+config.AddEnvironmentVariables();
 
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+services.AddBllServices();
+services.AddValidators();
+services.AddMapper(config);
+
+services.AddAuth(config);
+services.AddControllers();
+
+services.AddEndpointsApiExplorer();
+services.AddSwaggerGen(options =>
+{
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Введите JWT токен."
+    });
+
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            []
+        }
+    });
+});
+
+services.AddPostgresDb(config);
 
 var app = builder.Build();
-
-app.UseMiddleware<AuthCookieMiddleware>();
 
 app.UseExceptionHandler(errorApp =>
 {
@@ -39,8 +65,24 @@ app.UseExceptionHandler(errorApp =>
     });
 });
 
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
 app.MapGet("/", () => "Hello World!");
 app.MapControllers();
 
+MigrateDatabase(app);
+
 app.Run();
+return;
+
+static void MigrateDatabase(WebApplication app)
+{
+    using var scope = app.Services.CreateScope();
+    using var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    
+    db.Database.Migrate();
+}
