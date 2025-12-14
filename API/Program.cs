@@ -1,4 +1,6 @@
 using API;
+using API.GraphQL;
+using API.GraphQL.Types;
 using BLL.Implementation;
 using Dal;
 using Microsoft.EntityFrameworkCore;
@@ -47,6 +49,13 @@ services.AddSwaggerGen(options =>
 });
 
 services.AddPostgresDb(config);
+services
+    .AddGraphQLServer()
+    .AddQueryType<Query>()
+    .AddType<UserType>() // Регистрируем конфигурацию для User
+    .AddProjections() // Включает проекции (SELECT только нужных полей)
+    .AddFiltering()   // Включает фильтрацию (Where)
+    .AddSorting();    // Включает сортировку (OrderBy)
 
 var app = builder.Build();
 
@@ -73,6 +82,7 @@ if (app.Environment.IsDevelopment())
 
 app.MapGet("/", () => "Hello World!");
 app.MapControllers();
+app.MapGraphQL();
 
 MigrateDatabase(app);
 

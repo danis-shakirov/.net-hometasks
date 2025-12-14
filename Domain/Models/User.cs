@@ -12,4 +12,7 @@ public class User
     
     public DateTime CreationDate { get; set; }
     public DateTime UpdateDate { get; set; }
+
+    public List<Post> Posts { get; set; } = [];
+    public List<Comment> Comments { get; set; } = [];
 }

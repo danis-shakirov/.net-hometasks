@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using BLL.Interfaces.Services;
+using Domain.Dtos;
 using Domain.Enums;
 using Domain.Models;
 using Domain.WebExceptions;
